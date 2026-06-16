@@ -1,5 +1,7 @@
 {
   "name": "mifinanzas-proxy",
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "description": "Proxy multi-broker para MiFinanzas",
+  "engines": { "node": ">=18" }
 }
 
