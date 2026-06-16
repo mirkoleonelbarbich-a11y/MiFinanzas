@@ -1,85 +1,85 @@
+/**
+ * MiFinanzas · Proxy IOL (InvertirOnLine)
+ * 
+ * Endpoints habilitados:
+ * POST /token                        → Login / Refresh token
+ * GET  /api/v2/portafolio/argentina  → Posiciones del portafolio
+ * GET  /api/v2/estadocuenta          → Saldo en efectivo
+ */
+
 const IOL_BASE = 'https://api.invertironline.com';
 
-export default async function handler(req, res) {
+const ALLOWED = [
+  '/token',
+  '/api/v2/portafolio/argentina',
+  '/api/v2/estadocuenta',
+];
+
+const cors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Max-Age', '86400');
+};
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+module.exports = async (req, res) => {
+  cors(res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { path } = req.query;
-
+  const path = req.query.path;
   if (!path) {
-    return res.status(400).json({ error: 'Falta el parametro path' });
+    return res.status(400).json({ error: 'Falta parámetro: path', broker: 'iol' });
   }
 
-  const allowedPaths = [
-    '/token',
-    '/api/v2/portafolio/argentina',
-    '/api/v2/estadocuenta',
-    '/api/v2/operaciones',
-  ];
-
-  const isAllowed = allowedPaths.some(p => path.startsWith(p));
-  if (!isAllowed) {
-    return res.status(403).json({ error: 'Endpoint no permitido' });
+  const allowed = ALLOWED.some(p => path === p || path.startsWith(p + '?'));
+  if (!allowed) {
+    return res.status(403).json({ error: 'Endpoint no permitido', broker: 'iol', path });
   }
-
-  const targetUrl = `${IOL_BASE}${path}`;
 
   try {
-    const iolHeaders = {
-      'Content-Type': req.headers['content-type'] || 'application/json',
-    };
+    const url = IOL_BASE + path;
+    const isLogin = path === '/token';
+    const headers = {};
 
-    if (req.headers.authorization) {
-      iolHeaders['Authorization'] = req.headers.authorization;
-    }
-
-    let body = undefined;
-    if (req.method === 'POST') {
-      if (typeof req.body === 'string') {
-        body = req.body;
-      } else if (req.body && typeof req.body === 'object') {
-        const ct = req.headers['content-type'] || '';
-        if (ct.includes('application/x-www-form-urlencoded')) {
-          body = Object.entries(req.body)
-            .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-            .join('&');
-        } else {
-          body = JSON.stringify(req.body);
-        }
+    if (isLogin) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    } else {
+      headers['Content-Type'] = 'application/json';
+      if (req.headers.authorization) {
+        headers['Authorization'] = req.headers.authorization;
       }
     }
 
-    const iolRes = await fetch(targetUrl, {
-      method: req.method,
-      headers: iolHeaders,
-      body,
-    });
+    const options = { method: req.method || 'GET', headers };
 
+    if (req.method === 'POST') {
+      const body = req.body || {};
+      if (isLogin) {
+        // Login normal o refresh token
+        const params = new URLSearchParams();
+        if (body.grant_type === 'refresh_token') {
+          params.append('grant_type', 'refresh_token');
+          params.append('refresh_token', body.refresh_token || '');
+        } else {
+          params.append('grant_type', 'password');
+          params.append('username', body.username || '');
+          params.append('password', body.password || '');
+        }
+        options.body = params.toString();
+      } else {
+        options.body = JSON.stringify(body);
+      }
+    }
+
+    const iolRes = await fetch(url, options);
     const contentType = iolRes.headers.get('content-type') || '';
-    let data;
-    if (contentType.includes('application/json')) {
-      data = await iolRes.json();
-    } else {
-      data = await iolRes.text();
-    }
+    const data = contentType.includes('application/json')
+      ? await iolRes.json()
+      : { raw: await iolRes.text() };
 
-    res.status(iolRes.status);
-    if (typeof data === 'object') {
-      return res.json(data);
-    } else {
-      return res.send(data);
-    }
+    return res.status(iolRes.status).json(data);
 
   } catch (err) {
-    return res.status(502).json({
-      error: 'Error al conectar con IOL',
-      detail: err.message
-    });
+    console.error('[IOL Proxy]', err.message);
+    return res.status(500).json({ error: err.message, broker: 'iol' });
   }
-}
+};
