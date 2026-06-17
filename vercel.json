@@ -11,5 +11,16 @@
     { "source": "/api/bitso",      "destination": "/api/brokers/bitso" },
     { "source": "/api/aurum",      "destination": "/api/brokers/aurum" },
     { "source": "/api/puente",     "destination": "/api/brokers/puente" }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin",  "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" },
+        { "key": "Access-Control-Max-Age",       "value": "86400" }
+      ]
+    }
   ]
 }
